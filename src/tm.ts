@@ -120,7 +120,7 @@ export const queryDataFromTable = async (connectionId: string, tableId: string, 
                 access_token: accessToken
             }
         })
-        const data = res.data.data || []
+        const data = res.data?.data?.sampleData || []
         return data || []
     } catch (e) {
         console.error('Query Data Failed', e)

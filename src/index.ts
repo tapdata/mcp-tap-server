@@ -182,15 +182,6 @@ mcpServer.server.setRequestHandler(CallToolRequestSchema, async function (req, h
 
     let resultData = []
     switch (command) {
-        case 'query': {
-            if (!connectionId)
-                throw new Error('Connection id is required')
-            if (!tableName)
-                throw new Error('Table name is required')
-
-            resultData = await queryDataFromTable(connectionId as string, tableName as string, sessionContext.accessToken)
-            break;
-        }
         case 'connections': {
             const connections = await listConnections(sessionContext.accessToken)
             resultData = connections?.map((c: any) => readConnectionSchema(c))?.map((c: ConnectionSchema) => {
@@ -211,6 +202,15 @@ mcpServer.server.setRequestHandler(CallToolRequestSchema, async function (req, h
                 delete t.indexes
                 return t
             })
+            break;
+        }
+        case 'query': {
+            if (!connectionId)
+                throw new Error('Connection id is required')
+            if (!tableName)
+                throw new Error('Table name is required')
+
+            resultData = await queryDataFromTable(connectionId as string, tableName as string, sessionContext.accessToken)
             break;
         }
     }
