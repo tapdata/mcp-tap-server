@@ -1,5 +1,6 @@
 import {Request} from 'express';
 import {ConnectionSchema, Field, Index, TableSchema} from "./types.js";
+import {ObjectId} from "mongodb";
 
 function parseAuthorization(req: Request): { type: string; credentials: string } | null {
     const authHeader = req.headers['authorization'];
@@ -68,4 +69,15 @@ export const readTableSchema = (table: { [key: string]: any }): TableSchema => {
         } as Index)
     })
     return schema;
+}
+
+export const converObjectIdInFilter = (filter: { [key: string]: any }): any => {
+    if (filter) {
+        Object.keys(filter).forEach((key: string) => {
+            if (key === '_id' && /[a-z0-9]{24}/.test(filter[key])) {
+                filter[key] = new ObjectId(filter[key])
+            }
+        })
+    }
+    return filter
 }

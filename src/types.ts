@@ -5,6 +5,8 @@ export interface SessionContext {
     accessToken: string;
     expired: number;
     transport: SSEServerTransport;
+    tags: string[];
+    connectionIds?: string[];
 }
 
 export interface Field {

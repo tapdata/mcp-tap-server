@@ -14,9 +14,11 @@ import {
     GetPromptRequestSchema
 } from "@modelcontextprotocol/sdk/types.js"
 import session from 'express-session';
-import {ConnectionSchema, Field, Index, Schema, SessionContext, TableSchema} from "./types.js";
-import {getAuthorizationCredentials, readConnectionSchema, readTableSchema} from "./utils.js";
+import {ConnectionSchema, Schema, SessionContext, TableSchema} from "./types.js";
+import {converObjectIdInFilter, getAuthorizationCredentials, readConnectionSchema, readTableSchema} from "./utils.js";
 import {getConnectionById, health, listConnections, login, queryDataFromTable} from "./tm.js";
+import {closeDB, getDB} from "./db.js";
+import {CollationOptions, CountDocumentsOptions, FindOptions, ReadConcernLike} from "mongodb";
 
 const mcpServer = new McpServer({
     name: 'mcp-tap-server',
@@ -42,7 +44,7 @@ mcpServer.server.setRequestHandler(PingRequestSchema, async function (request, h
 
 mcpServer.server.setRequestHandler(ListResourcesRequestSchema, async function (req, handlerExtra) {
     const sessionContext = sessionContextStore[handlerExtra?.sessionId || '']
-    const connections = await listConnections(sessionContext.accessToken)
+    const connections = await listConnections(sessionContext.accessToken, sessionContext.tags)
     const resources: any[] = []
     if (connections) {
         connections.forEach((c: { [key: string]: any }) => {
@@ -131,43 +133,149 @@ mcpServer.server.setRequestHandler(ListToolsRequestSchema, async function (req, 
     return {
         tools: [
             {
-                name: 'connections',
+                name: 'listConnections',
                 description: 'List all available database connections',
                 inputSchema: {
                     type: 'object'
                 }
             },
             {
-                name: 'tables',
-                description: 'List all tables based on database connection id',
+                name: "listCollections",
+                description: "List all collections in the MongoDB database",
                 inputSchema: {
-                    type: 'object',
-                    properties: {
-                        connectionId: {
-                            type: "string",
-                            description: "The id of the connection to list tables",
-                        }
-                    },
-                    required: ['connectionId'],
-                }
-            },
-            {
-                name: 'query',
-                description: 'Query data using the specified database connection id and table name',
-                inputSchema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                         connectionId: {
                             type: "string",
                             description: "The id of the connection to query data",
                         },
-                        tableName: {
-                            type: "string",
-                            description: "The name of the table to query data",
-                        }
+                        nameOnly: {
+                            type: "boolean",
+                            description:
+                                "Optional: If true, returns only the collection names instead of full collection info",
+                        },
+                        filter: {
+                            type: "object",
+                            description: "Optional: Filter to apply to the collections",
+                        },
                     },
-                    required: ['connectionId', 'tableName'],
-                }
+                    required: ["connectionId"]
+                },
+            },
+            {
+                name: "query",
+                description:
+                    "Execute a MongoDB query with optional execution plan analysis",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        connectionId: {
+                            type: "string",
+                            description: "The id of the connection to query data",
+                        },
+                        collectionName: {
+                            type: "string",
+                            description: "Name of the collection to query",
+                        },
+                        filter: {
+                            type: "object",
+                            description: "MongoDB query filter",
+                        },
+                        projection: {
+                            type: "object",
+                            description: "Fields to include/exclude",
+                        },
+                        limit: {
+                            type: "number",
+                            description: "Maximum number of documents to return",
+                        },
+                        explain: {
+                            type: "string",
+                            description:
+                                "Optional: Get query execution information (queryPlanner, executionStats, or allPlansExecution)",
+                            enum: ["queryPlanner", "executionStats", "allPlansExecution"],
+                        },
+                    },
+                    required: ["connectionId", "collectionName"],
+                },
+            },
+            {
+                name: "aggregate",
+                description:
+                    "Execute a MongoDB aggregation pipeline with optional execution plan analysis",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        connectionId: {
+                            type: "string",
+                            description: "The id of the connection to query data",
+                        },
+                        collectionName: {
+                            type: "string",
+                            description: "Name of the collection to aggregate",
+                        },
+                        pipeline: {
+                            type: "array",
+                            description: "Aggregation pipeline stages",
+                        },
+                        explain: {
+                            type: "string",
+                            description:
+                                "Optional: Get aggregation execution information (queryPlanner, executionStats, or allPlansExecution)",
+                            enum: ["queryPlanner", "executionStats", "allPlansExecution"],
+                        },
+                    },
+                    required: ["connectionId", "collectionName", "pipeline"],
+                },
+            },
+            {
+                name: "count",
+                description:
+                    "Count the number of documents in a collection that match a query",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        connectionId: {
+                            type: "string",
+                            description: "The id of the connection to query data",
+                        },
+                        collectionName: {
+                            type: "string",
+                            description: "Name of the collection to count documents in",
+                        },
+                        query: {
+                            type: "object",
+                            description:
+                                "Optional: Query filter to select documents to count",
+                        },
+                        limit: {
+                            type: "integer",
+                            description: "Optional: Maximum number of documents to count",
+                        },
+                        skip: {
+                            type: "integer",
+                            description:
+                                "Optional: Number of documents to skip before counting",
+                        },
+                        hint: {
+                            type: "object",
+                            description: "Optional: Index hint to force query plan",
+                        },
+                        readConcern: {
+                            type: "object",
+                            description: "Optional: Read concern for the count operation",
+                        },
+                        maxTimeMS: {
+                            type: "integer",
+                            description: "Optional: Maximum time to allow the count to run",
+                        },
+                        collation: {
+                            type: "object",
+                            description: "Optional: Collation rules for string comparison",
+                        },
+                    },
+                    required: ["connectionId", "collectionName"],
+                },
             }
         ]
     }
@@ -178,41 +286,222 @@ mcpServer.server.setRequestHandler(CallToolRequestSchema, async function (req, h
     const sessionContext = sessionContextStore[handlerExtra?.sessionId || '']
 
     const command = req.params.name
-    const {connectionId, tableName} = req.params.arguments || {};
+    const {connectionId, collectionName} = req.params.arguments || {};
 
-    let resultData = []
+    const getCollection = async () => {
+        if (!connectionId)
+            throw new Error('Connection id is required')
+        if (!collectionName)
+            throw new Error('Collection name is required')
+
+        // Validate collection name to prevent access to system collections
+        if ((collectionName as string).startsWith("system.")) {
+            throw new Error("Access to system collections is not allowed");
+        }
+
+        if (!sessionContext.connectionIds?.includes(connectionId as string))
+            sessionContext.connectionIds?.push(connectionId as string);
+
+        const connection = await getConnectionById(connectionId as string, sessionContext.accessToken)
+        const db = await getDB(connection)
+        return db.collection(collectionName as string)
+    }
+
+    let resultData: any
     switch (command) {
-        case 'connections': {
-            const connections = await listConnections(sessionContext.accessToken)
+        case 'listConnections': {
+            const connections = await listConnections(sessionContext.accessToken, sessionContext.tags)
             resultData = connections?.map((c: any) => readConnectionSchema(c))?.map((c: ConnectionSchema) => {
                 delete c?.tables
                 return c;
             })
             break;
         }
-        case 'tables': {
-            if (!connectionId)
-                throw new Error('Connection id is required')
 
-            const connection = connectionId ? await getConnectionById(connectionId as string, sessionContext.accessToken) : {}
-            resultData = connection.schema?.tables?.map((table: {
-                [key: string]: any
-            }) => readTableSchema(table))?.map((t: TableSchema) => {
-                delete t.fields
-                delete t.indexes
-                return t
-            })
+        case "listCollections": {
+            const {nameOnly, filter} = req.params.arguments || {};
+
+            try {
+                if (!connectionId)
+                    throw new Error('Connection id is required')
+
+                const connection = await getConnectionById(connectionId as string, sessionContext.accessToken)
+                const db = await getDB(connection)
+
+                // Get the list of collections
+                const options = filter ? {filter} : {};
+                const collections = await db.listCollections(options).toArray();
+
+                // If nameOnly is true, return only the collection names
+                resultData = nameOnly
+                    ? collections.map((collection: any) => collection.name)
+                    : collections;
+            } catch (error) {
+                console.error('List collections failed', error)
+                if (error instanceof Error) {
+                    throw new Error(`Failed to list collections: ${error.message}`);
+                }
+                throw new Error("Failed to list collections: Unknown error");
+            }
             break;
         }
+
         case 'query': {
-            if (!connectionId)
-                throw new Error('Connection id is required')
-            if (!tableName)
-                throw new Error('Table name is required')
+            const collection = await getCollection()
+            const {filter, projection, limit, explain} = req.params.arguments || {};
 
-            resultData = await queryDataFromTable(connectionId as string, tableName as string, sessionContext.accessToken)
+            // Validate and parse filter
+            let queryFilter = {};
+            if (filter) {
+                if (typeof filter === "string") {
+                    try {
+                        queryFilter = JSON.parse(filter);
+                    } catch (e) {
+                        throw new Error("Invalid filter format: must be a valid JSON object",);
+                    }
+                } else if (typeof filter === "object" && !Array.isArray(filter)) {
+                    queryFilter = filter;
+                } else {
+                    throw new Error("Query filter must be a plain object or ObjectId");
+                }
+                queryFilter = converObjectIdInFilter(queryFilter)
+            }
+
+            // Execute the find operation with error handling
+            try {
+                if (explain) {
+                    // Use explain for query analysis
+                    resultData = await collection
+                        .find(queryFilter, {
+                            projection,
+                            limit: limit || 100,
+                        } as FindOptions)
+                        .explain(explain);
+                } else {
+                    // Regular query execution
+                    const cursor = collection.find(queryFilter, {
+                        projection,
+                        limit: limit || 100,
+                    } as FindOptions);
+                    resultData = await cursor.toArray();
+                }
+            } catch (error) {
+                console.error(`Execute query on collection ${collectionName} failed`, error)
+                if (error instanceof Error) {
+                    throw new Error(
+                        `Failed to query collection ${collection.collectionName}: ${error.message}`,
+                    );
+                }
+                throw new Error(
+                    `Failed to query collection ${collection.collectionName}: Unknown error`,
+                );
+            }
             break;
         }
+        case "aggregate": {
+            const {pipeline, explain} = req.params.arguments || {};
+            if (!Array.isArray(pipeline)) {
+                throw new Error("Pipeline must be an array");
+            }
+
+            const collection = await getCollection()
+
+            // Execute the aggregation operation with error handling
+            try {
+                if (explain) {
+                    // Use explain for aggregation analysis
+                    resultData = await collection.aggregate(pipeline).explain();
+                } else {
+                    // Regular aggregation execution
+                    resultData = await collection.aggregate(pipeline).toArray();
+                }
+            } catch (error) {
+                console.error(`Execute aggregate on collection ${collectionName} failed`, error)
+                if (error instanceof Error) {
+                    throw new Error(
+                        `Failed to aggregate collection ${collection.collectionName}: ${error.message}`,
+                    );
+                }
+                throw new Error(
+                    `Failed to aggregate collection ${collection.collectionName}: Unknown error`,
+                );
+            }
+            break;
+        }
+        case "count": {
+            const args = req.params.arguments || {};
+            const {query} = args;
+
+            const collection = await getCollection()
+
+            // Validate and parse query
+            let countQuery = {};
+            if (query) {
+                if (typeof query === "string") {
+                    try {
+                        countQuery = JSON.parse(query);
+                    } catch (e) {
+                        throw new Error("Invalid query format: must be a valid JSON object",);
+                    }
+                } else if (typeof query === "object" && !Array.isArray(query)) {
+                    countQuery = query;
+                } else {
+                    throw new Error("Query must be a plain object");
+                }
+                countQuery = converObjectIdInFilter(countQuery)
+            }
+
+            try {
+
+
+                const options: CountDocumentsOptions = {
+                    limit: typeof args.limit === "number" ? args.limit : undefined,
+                    skip: typeof args.skip === "number" ? args.skip : undefined,
+                    hint:
+                        typeof args.hint === "object" && args.hint !== null
+                            ? args.hint
+                            : undefined,
+                    readConcern:
+                        typeof args.readConcern === "object" && args.readConcern !== null
+                            ? (args.readConcern as ReadConcernLike)
+                            : undefined,
+                    maxTimeMS:
+                        typeof args.maxTimeMS === "number" ? args.maxTimeMS : undefined,
+                    collation:
+                        typeof args.collation === "object" && args.collation !== null
+                            ? (args.collation as CollationOptions)
+                            : undefined,
+                };
+
+                // Remove undefined options
+                Object.keys(options).forEach(
+                    // @ts-ignore
+                    (key) => options[key] === undefined && delete options[key],
+                );
+
+                // Execute count operation
+                const count = await collection.countDocuments(countQuery, options);
+
+                resultData = {
+                    count: count,
+                    ok: 1,
+                }
+            } catch (error) {
+                console.error(`Execute count on collection ${collectionName} failed`, error)
+                if (error instanceof Error) {
+                    throw new Error(
+                        `Failed to count documents in collection ${collection.collectionName}: ${error.message}`,
+                    );
+                }
+                throw new Error(
+                    `Failed to count documents in collection ${collection.collectionName}: Unknown error`,
+                );
+            }
+            break;
+        }
+
+        default:
+            throw new Error(`Unknown tool: ${command}`);
     }
     return {content: [{type: 'text', text: JSON.stringify(resultData, null, 2)}]};
 })
@@ -316,14 +605,19 @@ app.get('/sse', async (req, res) => {
             return;
         }
 
+        const tags = req.query['tags'];
+
         const transport = new SSEServerTransport("/messages", res);
         sessionContextStore[transport.sessionId] = {
             sessionId: transport.sessionId,
             accessToken: userToken.id,
             expired: Date.now() + userToken.ttl * 1000,
-            transport: transport
+            transport: transport,
+            tags: typeof tags === 'string' ? [tags] : tags as string[],
+            connectionIds: []
         };
         res.on('close', () => {
+            closeDB(sessionContextStore[transport.sessionId]?.connectionIds)
             delete sessionContextStore[transport.sessionId];
         })
         await mcpServer.connect(transport);

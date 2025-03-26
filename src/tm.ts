@@ -11,6 +11,9 @@ const client = axios.create({
     responseType: "json",
 });
 client.interceptors.request.use((config) => {
+    config.paramsSerializer = Object.assign({}, config.paramsSerializer, {
+        encode: (value: string) => encodeURIComponent(value)
+    })
     return {...config, startTime: Date.now()};
 })
 client.interceptors.response.use(function (response) {
@@ -60,16 +63,23 @@ export const health = async (accessToken: string) => {
     }
 }
 
-export const listConnections = async (accessToken: string) => {
+export const listConnections = async (accessToken: string, tags: string[]) => {
     try {
+        const where: { [key: string]: any } = {
+            status: 'ready',
+            database_type: 'MongoDB'
+        }
+        if (tags?.length > 0) {
+            where['listtags.value'] = {
+                '$inq': tags
+            }
+        }
         const res = await client.get('/api/Connections', {
             params: {
                 access_token: accessToken,
                 noSchema: false,
                 filter: JSON.stringify({
-                    where: {
-                        status: 'ready'
-                    },
+                    where,
                     limit: 10
                 })
             }
@@ -84,7 +94,8 @@ export const listConnections = async (accessToken: string) => {
                 status: c.status,
                 tableCount: c.tableCount,
                 loadSchemaTime: c.loadSchemaTime,
-                schema: c.schema
+                schema: c.schema,
+                config: c.config
             }
         }) || []
     } catch (e) {
