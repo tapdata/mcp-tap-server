@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/tapdata-mcp-tap-server-badge.png)](https://mseep.ai/app/tapdata-mcp-tap-server)
+
 # MCP TapData Server
 ---
 
