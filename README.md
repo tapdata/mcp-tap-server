@@ -112,7 +112,7 @@ https://github.com/user-attachments/assets/013628e6-9d2c-4a6a-a8d4-918601e1a99b
 
 # 联系我们
 
-- Email: leon@tapdata.io
+- Email: [Send Email](mailto:leon@tapdata.io)
 - Phone: 18661673206
 - WeChat:
 <img src="qr_code.jpeg">
