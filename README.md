@@ -93,31 +93,11 @@ docker run -d -p 3030:3030 ghcr.io/tapdata/tapdata:latest
 - 名称：MongoDB-Risk
 - 用于实时数仓，汇总各个源库数据
 
-### 创建数据源
-对于每个数据源，请按照以下步骤配置：
 
-- 在TapData管理界面，导航至"连接管理"
-- 点击"创建"按钮
-- 选择相应的数据库类型
-- 填写连接信息（主机、端口、用户名、密码等）
-- 点击"测试连接"确保连接成功
-- 点击"保存"完成配置
-
-## 创建物化视图
-
-在TapData 中创建一个物化视图，包含交易信息以及交易相关的用户、商户等信息，并配置两个数据库中的数据实时同步到物化视图
-
-[视频]
-
-
-## 配置 Trae AI 添加 TapData MCP Server
-
-### 在 Trae AI中启用MCP功能
-
-
-通过大模型在风控场景中对某种实时指标进行计算，得出结果
-
-
+## 详细安装配置步骤
+<video src="demo.mp4" controls>
+  Your browser does not support the video tag.
+</video>
 
 # 使用TapData MCP Server 有哪些优势
 
