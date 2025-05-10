@@ -93,6 +93,11 @@ docker run -d -p 3030:3030 ghcr.io/tapdata/tapdata:latest
 
 
 ## 详细安装配置步骤
+
+https://github.com/user-attachments/assets/013628e6-9d2c-4a6a-a8d4-918601e1a99b
+
+
+
 <video src="demo.mp4" controls>
   Your browser does not support the video tag.
 </video>
