@@ -19,7 +19,7 @@ TapData 是一种强大的数据集成和处理框架，允许AI系统使用MCP�
 ## 本教程的价值
 
 - 在自己的环境安装部署TapData
-- 使用自己的AI Agent 通过 TapData MCP Server 访问您的业务数据
+- 配置 AI Agent 添加 TapData MCP Server 探索 AI + 业务数据
 
 # 环境准备
 
@@ -40,7 +40,6 @@ TapData 是一种强大的数据集成和处理框架，允许AI系统使用MCP�
         - User: u_risk
         - Pwd: Risk!234
         - Schema: public
-          软件要求
 
 - 个人电脑
   - 安装 Trae AI
@@ -52,7 +51,7 @@ TapData 是一种强大的数据集成和处理框架，允许AI系统使用MCP�
 
 # 配置步骤
 
-## 安装和配置Tapdata
+## 安装和配置 TapData
 
  TapData 提供了 AllInOne 容器，您只需要登录服务器终端，执行下方命令即可启动TapData。
 ```shell
@@ -90,13 +89,13 @@ docker run -d -p 3030:3030 ghcr.io/tapdata/tapdata:latest
 3. MongoDB 中台数据库：
 - 名称：MongoDB-Risk
 - 用于实时数仓，汇总各个源库数据
+- 数据库连接信息（数据由AI 生成）
+    - URI: mongodb://localhost:27017/test
 
 
 ## 详细安装配置步骤
 
 https://github.com/user-attachments/assets/013628e6-9d2c-4a6a-a8d4-918601e1a99b
-
-
 
 <video src="demo.mp4" controls>
   Your browser does not support the video tag.
